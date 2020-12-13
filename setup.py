@@ -18,6 +18,7 @@ setup(
     long_description=LONG_DESCRIPTION,
     url="https://github.com/jankrepl/gnnfit",
     packages=find_packages(exclude=["tests"]),
+    python_requires=">=3.6",
     license="MIT",
     install_requires=INSTALL_REQUIRES,
     extras_require={

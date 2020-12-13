@@ -1,0 +1,54 @@
+name: gnnfit
+
+on:
+  push:
+    branches:
+    - master
+  pull_request:
+    branches:
+    - master
+
+jobs:
+  build:
+
+    runs-on:  ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: [3.6, 3.7, 3.8, 3.9]
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v2
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install wheel
+        pip install --compile torch
+        pip install --compile torch-scatter
+        pip install --compile torch-sparse
+        pip install --compile torch-cluster
+        pip install --compile torch-spline-conv
+        pip install torch-geometric
+        pip install .[dev]
+
+    - name: Lint with flake8
+      run: |
+        flake8 gnnfit tests setup.py  # see tox.ini for config
+
+    - name: Check style with black
+      run: |
+        black --check -l 80 gnnfit tests setup.py
+
+    - name: Check docstrings with pydocstyle
+      run: |
+        pydocstyle gnnfit
+
+    - name: Test with pytest
+      run: |
+        pytest --color=yes  # see tox.ini for config
