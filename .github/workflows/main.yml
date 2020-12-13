@@ -29,12 +29,13 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install wheel
-        pip install .[dev]
+        pip install --compile torch
         pip install --compile torch-scatter
         pip install --compile torch-sparse
         pip install --compile torch-cluster
         pip install --compile torch-spline-conv
         pip install torch-geometric
+        pip install .[dev]
 
     - name: Lint with flake8
       run: |
