@@ -1,4 +1,5 @@
 """Conversion utilities."""
+from abc import ABC, abstractmethod
 from collections import Counter
 from itertools import product
 
@@ -6,11 +7,25 @@ import torch
 from torch_geometric.data import Data
 
 
-class Linear:
+class Convertor(ABC):
+    """Template for conversions between torch and torch_geometric objects."""
+
+    @staticmethod
+    @abstractmethod
+    def to_graph():
+        """Convert from `torch.nn.Linear` to `torch_geometric.data.Data`."""
+
+    @staticmethod
+    @abstractmethod
+    def to_module():
+        """Convert from `torch_geometric.data.Data` to `torch.nn.Linear`."""
+
+
+class Linear(Convertor):
     """Conversions between `torch.nn.Linear` and `torch_geometric.data.Data`."""
 
     @staticmethod
-    def to_data(model, target=None, node_strategy=None):
+    def to_graph(model, target=None, node_strategy="proportional"):
         """Convert `torch.nn.Linear` to `torch_geometric.data.Data`.
 
         Parameters
@@ -32,7 +47,7 @@ class Linear:
 
         Returns
         -------
-        data : torch_geometric.data.Data
+        graph : torch_geometric.data.Data
             Graph that is ready to be used with `torch_geometric`.
         """
         if not isinstance(model, torch.nn.Linear):
@@ -74,26 +89,28 @@ class Linear:
             x = None
         elif node_strategy == "constant":
             x = torch.ones(n_nodes, dtype=torch.float)
+            x = x[:, None]
         elif node_strategy == "proportional":
             x = torch.ones(n_nodes, dtype=torch.float)
             x[start_out:end_out] = 1 / (1 + model.in_features)
+            x = x[:, None]
 
         else:
             raise ValueError(f"Unsupported node strategy {node_strategy}")
 
-        data = Data(x=x, edge_index=edge_index, edge_features=edge_features, y=target)
+        graph = Data(x=x, edge_index=edge_index, edge_features=edge_features, y=target)
 
-        data.num_nodes = n_nodes
+        graph.num_nodes = n_nodes
 
-        return data
+        return graph
 
     @staticmethod
-    def to_module(data):
+    def to_module(graph):
         """Convert `torch_geometric.data.Data` to `torch.nn.Linear`.
 
         Parameters
         ----------
-        data : torch_geometric.data.Data
+        graph : torch_geometric.data.Data
             Graph that conpatible with `torch_geometric`.
 
         Returns
@@ -101,10 +118,10 @@ class Linear:
         model : torch.nn.Linear
             Linear module that might contain bias.
         """
-        edge_features = data.edge_features
+        edge_features = graph.edge_features
 
-        output_indices = set(data.edge_index[1, :].numpy())
-        counter = Counter(data.edge_index[0, :].numpy())
+        output_indices = set(graph.edge_index[1, :].numpy())
+        counter = Counter(graph.edge_index[0, :].numpy())
         bias_indices = {i for i, count in counter.items() if count == 1}
         input_indices = {i for i, count in counter.items() if count > 1}
 

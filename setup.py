@@ -6,7 +6,9 @@ DESCRIPTION = ""
 LONG_DESCRIPTION = DESCRIPTION
 
 INSTALL_REQUIRES = [
+    "scikit-learn",
     "torch",
+    "tqdm",
 ]
 
 setup(
