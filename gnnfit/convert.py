@@ -154,15 +154,40 @@ class MLP(Convertor):
     """
 
     @staticmethod
-    def to_graph(module):
-        pass
+    def to_graph(module, target=None, node_strategy="proportional"):
+        """Convert MLP `torch.nn.Module` to `torch_geometric.data.Data`.
+
+        Parameters
+        ----------
+        module : torch.nn.Module
+            MLP module.
+
+        target : None or torch.Tensor
+            If specified, than represents a supervised target of the module. The
+            expected shape is `(1, target_dim)`.
+
+        node_strategy : None or str, {"constant", "proportional"}
+            If not specified, then then no node features used. If specified,
+            it can be the following options:
+
+                - "constant" : all node features are equal to 1
+                - "proportional" : the node feature of a given node
+                  is equal to `1 / (n_parent_nodes + 1)`.
+
+        Returns
+        -------
+        graph : torch_geometric.data.Data
+            Graph that is ready to be used with `torch_geometric`.
+        """
+        if not MLP._is_mlp(module):
+            raise TypeError("The provided module is not an MLP")
 
     @staticmethod
     def to_module(graph):
         pass
 
     @staticmethod
-    def _check_mlp(module):
+    def _is_mlp(module):
         """Check whether an MLP.
 
         The condition is that all layers with learnable parameters
@@ -179,6 +204,9 @@ class MLP(Convertor):
         bool
             If true, then the module is a MLP.
         """
+        if isinstance(module, torch.nn.Linear):
+            return True
+
         has_learnable_layers = False
         for layer in MLP._get_learnable_layers(module):
             has_learnable_layers = True
@@ -215,4 +243,3 @@ class MLP(Convertor):
 
             except StopIteration:
                 continue
-

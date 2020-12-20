@@ -243,16 +243,270 @@ class TestMLPUtils:
             self.layer = torch.nn.Sequential(torch.nn.Linear(3, 4))
 
     @pytest.mark.parametrize(
-        "module, out", [
-                        (torch.nn.Sequential(torch.nn.Linear(2, 3)), True),
-                        (torch.nn.Sequential(), False),
-                        (Module1(), True),
-                        (Module2(), False),
-                        (Module3(), True),
-                        (Module4(), True),
-                        (Module5(), False),
-                        (Module6(), False),
-                        ]
-)
-    def test_check_mlp(self, module, out):
-        assert MLP._check_mlp(module) == out
+        "module, out",
+        [
+            (torch.nn.Sequential(torch.nn.Linear(2, 3)), True),
+            (torch.nn.Sequential(), False),
+            (torch.nn.Linear(4, 5), True),
+            (Module1(), True),
+            (Module2(), False),
+            (Module3(), True),
+            (Module4(), True),
+            (Module5(), False),
+            (Module6(), False),
+        ],
+    )
+    def test_is_mlp(self, module, out):
+        assert MLP._is_mlp(module) == out
+
+
+class TestMLPToGraph:
+    @pytest.mark.parametrize("in_features", [2, 3])
+    @pytest.mark.parametrize("out_features", [5, 6])
+    def test_same_as_linar(self, in_features, out_features):
+        module = torch.nn.Linear(in_features, out_features)
+        x_linear = Linear.to_graph(module)
+        x_mlp = MLP.to_graph(module)
+
+        assert x_linear.num_nodes == x_mlp.num_nodes
+        assert torch.allclose(x_linear.x, x_mlp.x)
+        assert torch.allclose(x_linear.edge_index, x_mlp.edge_index)
+        assert torch.allclose(x_linear.edge_features, x_mlp.edge_features)
+
+    @pytest.mark.parametrize("random_state", [2, 3])
+    @pytest.mark.parametrize("node_strategy", [None, "constant", "proportional"])
+    def test_basic_no_bias(self, node_strategy, random_state):
+        in_features = 3
+        hidden_features = 4
+        out_features = 2
+
+        target = torch.tensor([[3.43]])
+
+        torch.manual_seed(random_state)
+
+        linear_1 = torch.nn.Linear(
+            in_features=in_features, out_features=hidden_features, bias=False
+        )
+        linear_2 = torch.nn.Linear(
+            in_features=hidden_features, out_features=out_features, bias=False
+        )
+        module = torch.nn.Sequential(linear_1, linear_2)
+        graph = MLP.to_graph(module, target=target, node_strategy=node_strategy)
+
+        # Checks
+        if node_strategy is None:
+            x_true = None
+        elif node_strategy == "constant":
+            x_true = torch.ones((9, 1), dtype=torch.float)
+        elif node_strategy == "proportional":
+            x_true = torch.tensor(
+                [
+                    1,
+                    1,
+                    1,
+                    1 / 4,
+                    1 / 4,
+                    1 / 4,
+                    1 / 4,
+                    1 / 5,
+                    1 / 5,
+                ]
+            )[:, None]
+
+        edge_index_true = torch.tensor(
+            [
+                [0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6],
+                [3, 4, 5, 6, 3, 4, 5, 6, 3, 4, 5, 6, 7, 8, 7, 8, 7, 8, 7, 8],
+            ],
+            dtype=torch.int64,
+        )
+
+        w_1 = linear_1.weight
+        w_2 = linear_2.weight
+        edge_features_true = torch.tensor(
+            [
+                [w_1[0, 0]],
+                [w_1[1, 0]],
+                [w_1[2, 0]],
+                [w_1[3, 0]],
+                [w_1[0, 1]],
+                [w_1[1, 1]],
+                [w_1[2, 1]],
+                [w_1[3, 1]],
+                [w_1[0, 2]],
+                [w_1[1, 2]],
+                [w_1[2, 2]],
+                [w_1[3, 2]],
+                [w_2[0, 0]],
+                [w_2[1, 0]],
+                [w_2[0, 1]],
+                [w_2[1, 1]],
+                [w_2[0, 2]],
+                [w_2[1, 2]],
+                [w_2[0, 3]],
+                [w_2[1, 3]],
+            ]
+        )
+        assert isinstance(graph, Data)
+
+        assert graph.num_nodes == 9
+        assert torch.equal(graph.y, target)
+        assert torch.equal(graph.edge_index, edge_index_true)
+        assert torch.equal(graph.edge_features, edge_features_true)
+        if x_true is not None:
+            assert torch.equal(graph.x, x_true)
+        else:
+            assert graph.x is None
+
+    @pytest.mark.parametrize("random_state", [2, 3])
+    @pytest.mark.parametrize("node_strategy", [None, "constant", "proportional"])
+    def test_basic_with_bias(self, node_strategy, random_state):
+        in_features = 3
+        hidden_features = 4
+        out_features = 2
+
+        target = torch.tensor([[3.43]])
+
+        torch.manual_seed(random_state)
+
+        linear_1 = torch.nn.Linear(
+            in_features=in_features, out_features=hidden_features, bias=True
+        )
+        linear_2 = torch.nn.Linear(
+            in_features=hidden_features, out_features=out_features, bias=True
+        )
+        module = torch.nn.Sequential(linear_1, linear_2)
+        graph = MLP.to_graph(module, target=target, node_strategy=node_strategy)
+
+        # Checks
+        if node_strategy is None:
+            x_true = None
+        elif node_strategy == "constant":
+            x_true = torch.ones((15, 1), dtype=torch.float)
+        elif node_strategy == "proportional":
+            x_true = torch.tensor(
+                [
+                    1,
+                    1,
+                    1,
+                    1 / 4,
+                    1 / 4,
+                    1 / 4,
+                    1 / 4,
+                    1,
+                    1,
+                    1,
+                    1,
+                    1 / 5,
+                    1 / 5,
+                    1,
+                    1,
+                ]
+            )[:, None]
+
+        edge_index_true = torch.tensor(
+            [
+                [
+                    0,
+                    0,
+                    0,
+                    0,
+                    1,
+                    1,
+                    1,
+                    1,
+                    2,
+                    2,
+                    2,
+                    2,
+                    7,
+                    8,
+                    9,
+                    10,
+                    3,
+                    3,
+                    4,
+                    4,
+                    5,
+                    5,
+                    6,
+                    6,
+                    13,
+                    14,
+                ],
+                [
+                    3,
+                    4,
+                    5,
+                    6,
+                    3,
+                    4,
+                    5,
+                    6,
+                    3,
+                    4,
+                    5,
+                    6,
+                    3,
+                    4,
+                    5,
+                    6,
+                    11,
+                    12,
+                    11,
+                    12,
+                    11,
+                    12,
+                    11,
+                    12,
+                    11,
+                    12,
+                ],
+            ],
+            dtype=torch.int64,
+        )
+
+        w_1 = linear_1.weight
+        b_1 = linear_1.bias
+        w_2 = linear_2.weight
+        b_2 = linear_2.bias
+        edge_features_true = torch.tensor(
+            [
+                [w_1[0, 0]],
+                [w_1[1, 0]],
+                [w_1[2, 0]],
+                [w_1[3, 0]],
+                [w_1[0, 1]],
+                [w_1[1, 1]],
+                [w_1[2, 1]],
+                [w_1[3, 1]],
+                [w_1[0, 2]],
+                [w_1[1, 2]],
+                [w_1[2, 2]],
+                [w_1[3, 2]],
+                [b_1[0]],
+                [b_1[1]],
+                [b_1[2]],
+                [b_1[3]],
+                [w_2[0, 0]],
+                [w_2[1, 0]],
+                [w_2[0, 1]],
+                [w_2[1, 1]],
+                [w_2[0, 2]],
+                [w_2[1, 2]],
+                [w_2[0, 3]],
+                [w_2[1, 3]],
+                [b_2[0]],
+                [b_2[1]],
+            ]
+        )
+        assert isinstance(graph, Data)
+
+        assert graph.num_nodes == 15
+        assert torch.equal(graph.y, target)
+        assert torch.equal(graph.edge_index, edge_index_true)
+        assert torch.equal(graph.edge_features, edge_features_true)
+        if x_true is not None:
+            assert torch.equal(graph.x, x_true)
+        else:
+            assert graph.x is None
