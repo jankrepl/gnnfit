@@ -18,23 +18,23 @@ class Convertor(ABC):
     @staticmethod
     @abstractmethod
     def to_module():
-        """Convert from `torch_geometric.data.Data` to `torch.nn.Linear`."""
+        """Convert from `torch_geometric.data.Data` to `torch.nn.Module`."""
 
 
 class Linear(Convertor):
     """Conversions between `torch.nn.Linear` and `torch_geometric.data.Data`."""
 
     @staticmethod
-    def to_graph(model, target=None, node_strategy="proportional"):
+    def to_graph(module, target=None, node_strategy="proportional"):
         """Convert `torch.nn.Linear` to `torch_geometric.data.Data`.
 
         Parameters
         ----------
-        model : torch.nn.Linear
+        module : torch.nn.Linear
             Linear module that might contain a bias.
 
         target : None or torch.Tensor
-            If specified, than represents a supervised target of the model. The
+            If specified, than represents a supervised target of the module. The
             expected shape is `(1, target_dim)`.
 
         node_strategy : None or str, {"constant", "proportional"}
@@ -50,21 +50,21 @@ class Linear(Convertor):
         graph : torch_geometric.data.Data
             Graph that is ready to be used with `torch_geometric`.
         """
-        if not isinstance(model, torch.nn.Linear):
-            raise TypeError("The model needs to be a torch.nn.Linear instance.")
+        if not isinstance(module, torch.nn.Linear):
+            raise TypeError("The module needs to be a torch.nn.Linear instance.")
 
-        if model.bias is not None:
-            n_bias_nodes = model.out_features
+        if module.bias is not None:
+            n_bias_nodes = module.out_features
         else:
             n_bias_nodes = 0
 
-        n_nodes = model.in_features + model.out_features + n_bias_nodes
+        n_nodes = module.in_features + module.out_features + n_bias_nodes
 
         # Edge index
         start_inp = 0
-        end_inp = start_inp + model.in_features  # noninclusive
+        end_inp = start_inp + module.in_features  # noninclusive
         start_out = end_inp
-        end_out = start_out + model.out_features  # noninclusive
+        end_out = start_out + module.out_features  # noninclusive
 
         edge_index_l_weights = [
             x for x in product(range(start_inp, end_inp), range(start_out, end_out))
@@ -79,8 +79,8 @@ class Linear(Convertor):
         # Edge features
         edge_features = torch.cat(
             [
-                model.weight.t().flatten(),
-                torch.empty(0) if model.bias is None else model.bias,
+                module.weight.t().flatten(),
+                torch.empty(0) if module.bias is None else module.bias,
             ]
         )[:, None]
 
@@ -92,7 +92,7 @@ class Linear(Convertor):
             x = x[:, None]
         elif node_strategy == "proportional":
             x = torch.ones(n_nodes, dtype=torch.float)
-            x[start_out:end_out] = 1 / (1 + model.in_features)
+            x[start_out:end_out] = 1 / (1 + module.in_features)
             x = x[:, None]
 
         else:
@@ -115,7 +115,7 @@ class Linear(Convertor):
 
         Returns
         -------
-        model : torch.nn.Linear
+        module : torch.nn.Linear
             Linear module that might contain bias.
         """
         edge_features = graph.edge_features
@@ -128,18 +128,91 @@ class Linear(Convertor):
         in_features = len(input_indices)
         out_features = len(output_indices)
 
-        model = torch.nn.Linear(in_features, out_features, bias=bool(bias_indices))
+        module = torch.nn.Linear(in_features, out_features, bias=bool(bias_indices))
 
         weight = torch.nn.Parameter(
             edge_features[: in_features * out_features]
             .view(in_features, out_features)
             .t()
         )
-        model.weight = weight
+        module.weight = weight
 
         if bias_indices:
-            model.bias = torch.nn.Parameter(
+            module.bias = torch.nn.Parameter(
                 edge_features[in_features * out_features :].squeeze()
             )
 
-        return model
+        return module
+
+
+class MLP(Convertor):
+    """Conversion between a Multi-layer Perceptron and `torch_geometric.data.Data`.
+
+    Note that we define a MLP as a subclass of `torch.nn.Module` with all
+    learnable layers being `torch.nn.Linear`. This for example means,
+    that activation layers (without learnable parameters) are allowed.
+    """
+
+    @staticmethod
+    def to_graph(module):
+        pass
+
+    @staticmethod
+    def to_module(graph):
+        pass
+
+    @staticmethod
+    def _check_mlp(module):
+        """Check whether an MLP.
+
+        The condition is that all layers with learnable parameters
+        need to be `torch.nn.Linear`. It is not allowed to have
+        an empty model.
+
+        Parameters
+        ----------
+        module : torch.nn.Module
+            Any module.
+
+        Returns
+        -------
+        bool
+            If true, then the module is a MLP.
+        """
+        has_learnable_layers = False
+        for layer in MLP._get_learnable_layers(module):
+            has_learnable_layers = True
+            if not isinstance(layer, torch.nn.Linear):
+                return False
+
+        return has_learnable_layers
+
+    @staticmethod
+    def _get_learnable_layers(module):
+        """Extract only learnable layers from a `torch.nn.Module`.
+
+        The original order is left untouched. And no recursion is taking place
+        (only 1st level hieararchy iteration).
+
+        Parameters
+        ---------
+        module : torch.nn.Module
+            Any module.
+
+        Yields
+        ------
+        learnable_layer : torch.nn.Module
+            A learnable layer.
+        """
+        for layer in module.modules():
+            # skip itself
+            if layer is module:
+                continue
+
+            try:
+                param = next(layer.parameters())
+                yield layer
+
+            except StopIteration:
+                continue
+

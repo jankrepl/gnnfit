@@ -3,7 +3,7 @@ import pytest
 import torch
 from torch_geometric.data import Data
 
-from gnnfit.convert import Linear
+from gnnfit.convert import Linear, MLP
 
 
 class TestLinearToGraph:
@@ -202,3 +202,57 @@ class TestToModule:
         assert torch.equal(input_model.weight, output_model.weight)
         if bias:
             assert torch.equal(input_model.bias, output_model.bias)
+
+
+class TestMLPUtils:
+    class Module1(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+
+            self.fc1 = torch.nn.Linear(4, 5)
+
+    class Module2(torch.nn.Module):
+        pass
+
+    class Module3(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+
+            self.fc1 = torch.nn.Linear(4, 5)
+            self.fc2 = torch.nn.Linear(5, 10)
+
+    class Module4(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+
+            self.fc1 = torch.nn.Linear(4, 5)
+            self.fc2 = torch.nn.Linear(5, 10)
+            self.act = torch.nn.ReLU()
+
+    class Module5(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+
+            self.fc1 = torch.nn.Linear(4, 5)
+            self.conv1 = torch.nn.Conv1d(5, 2, 5)
+
+    class Module6(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+
+            self.layer = torch.nn.Sequential(torch.nn.Linear(3, 4))
+
+    @pytest.mark.parametrize(
+        "module, out", [
+                        (torch.nn.Sequential(torch.nn.Linear(2, 3)), True),
+                        (torch.nn.Sequential(), False),
+                        (Module1(), True),
+                        (Module2(), False),
+                        (Module3(), True),
+                        (Module4(), True),
+                        (Module5(), False),
+                        (Module6(), False),
+                        ]
+)
+    def test_check_mlp(self, module, out):
+        assert MLP._check_mlp(module) == out
