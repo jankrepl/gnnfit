@@ -247,7 +247,7 @@ class TestMLPUtils:
         [
             (torch.nn.Sequential(torch.nn.Linear(2, 3)), True),
             (torch.nn.Sequential(), False),
-            (torch.nn.Linear(4, 5), True),
+            (torch.nn.Linear(4, 5), False),  # To make things simpler
             (Module1(), True),
             (Module2(), False),
             (Module3(), True),
@@ -261,12 +261,17 @@ class TestMLPUtils:
 
 
 class TestMLPToGraph:
+    def test_incorrect_type(self):
+        with pytest.raises(TypeError):
+            MLP.to_graph("wrong_type")
+
+    @pytest.mark.parametrize("bias", [True, False])
     @pytest.mark.parametrize("in_features", [2, 3])
     @pytest.mark.parametrize("out_features", [5, 6])
-    def test_same_as_linar(self, in_features, out_features):
-        module = torch.nn.Linear(in_features, out_features)
+    def test_same_as_linear(self, in_features, out_features, bias):
+        module = torch.nn.Linear(in_features, out_features, bias=bias)
         x_linear = Linear.to_graph(module)
-        x_mlp = MLP.to_graph(module)
+        x_mlp = MLP.to_graph(torch.nn.Sequential(module))
 
         assert x_linear.num_nodes == x_mlp.num_nodes
         assert torch.allclose(x_linear.x, x_mlp.x)

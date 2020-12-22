@@ -2,6 +2,7 @@
 from abc import ABC, abstractmethod
 from collections import Counter
 from itertools import product
+from unittest.mock import Mock
 
 import torch
 from torch_geometric.data import Data
@@ -157,6 +158,12 @@ class MLP(Convertor):
     def to_graph(module, target=None, node_strategy="proportional"):
         """Convert MLP `torch.nn.Module` to `torch_geometric.data.Data`.
 
+        Some principles for the algorithm:
+
+            1) We go from left to right when creating the graph (=forward pass)
+               in batches of 2 - this can be seen as linear layers
+            2) Bias nodes are only added for output layers.
+
         Parameters
         ----------
         module : torch.nn.Module
@@ -182,9 +189,89 @@ class MLP(Convertor):
         if not MLP._is_mlp(module):
             raise TypeError("The provided module is not an MLP")
 
+        layers = list(MLP._get_learnable_layers(module))
+
+        first_linear = Mock(spec=torch.nn.Linear)
+        first_linear.in_features = 0
+        first_linear.out_features = layers[0].in_features
+        first_linear.bias = None
+        first_linear.weight = torch.empty(first_linear.out_features, 0)
+
+        layers = [first_linear, *layers]
+
+        # Prepare input layer
+        x_l = []
+        edge_index_l = []
+        edge_features_l = []
+
+        start_inp = 0
+        start_out = first_linear.in_features
+
+        n_nodes = 0
+
+        for i, linear in enumerate(layers):
+            if linear.bias is not None:
+                n_bias_nodes = linear.out_features
+            else:
+                n_bias_nodes = 0
+
+            start_bias = start_out + linear.out_features
+
+            n_new_nodes = linear.out_features + n_bias_nodes
+            n_nodes += n_new_nodes
+
+            # Node features
+            if node_strategy is None:
+                x_l = None
+            elif node_strategy == "constant":
+                x_l.append(torch.ones((n_new_nodes, 1),
+                                      dtype=torch.float))
+            elif node_strategy == "proportional":
+                x_ = torch.ones(n_new_nodes, dtype=torch.float)
+                x_[:linear.out_features] = 1 / (1 + linear.in_features)
+                x_l.append(x_[:, None])
+            else:
+                raise ValueError(f"Unsupported node strategy {node_strategy}")
+
+            # Edge features
+            edge_features_ = torch.cat(
+                [
+                    linear.weight.t().flatten(),
+                    torch.empty(0) if linear.bias is None else linear.bias,
+                ]
+            )[:, None]
+            edge_features_l.append(edge_features_)
+
+            # Edge index
+            edge_index_l_weights = [
+                x for x in product(range(start_inp, start_inp + linear.in_features),
+                                   range(start_out, start_out + linear.out_features))
+            ]
+            edge_index_l_bias = [(start_bias + i, start_out + i) for i in range(n_bias_nodes)]
+            edge_index_ = (
+                torch.tensor(edge_index_l_weights + edge_index_l_bias, dtype=torch.int64)
+                .t()
+                .contiguous()
+            )
+            edge_index_l.append(edge_index_)
+
+            # Preparation for the next layer
+            start_inp += linear.in_features
+            start_out += linear.out_features + n_bias_nodes
+
+        x = torch.cat(x_l) if x_l is not None else None
+        edge_index = torch.cat(edge_index_l, dim=-1)
+        edge_features = torch.cat(edge_features_l)
+
+        graph = Data(x=x, edge_index=edge_index, edge_features=edge_features, y=target)
+        graph.num_nodes = n_nodes
+
+        return graph
+
+
     @staticmethod
     def to_module(graph):
-        pass
+        raise NotImplementedError
 
     @staticmethod
     def _is_mlp(module):
@@ -204,8 +291,8 @@ class MLP(Convertor):
         bool
             If true, then the module is a MLP.
         """
-        if isinstance(module, torch.nn.Linear):
-            return True
+        if not isinstance(module, torch.nn.Module):
+            return False
 
         has_learnable_layers = False
         for layer in MLP._get_learnable_layers(module):
