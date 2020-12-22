@@ -581,3 +581,37 @@ class TestMLPToGraph:
             assert torch.equal(graph.x, x_true)
         else:
             assert graph.x is None
+
+class TestMLPToModule:
+    @pytest.mark.parametrize(
+        "module",
+        [
+            torch.nn.Sequential(torch.nn.Linear(2, 4)),
+            torch.nn.Sequential(torch.nn.Linear(4, 7, bias=False)),
+            torch.nn.Sequential(torch.nn.Linear(4, 7),
+                                torch.nn.Linear(7, 8)),
+            torch.nn.Sequential(
+                torch.nn.Linear(4, 7, bias=False),
+                torch.nn.Linear(7, 3),
+                torch.nn.Linear(3, 2),
+            ),
+            torch.nn.Sequential(
+                torch.nn.Linear(2, 3, bias=True),
+                torch.nn.Linear(3, 5, bias=True),
+                torch.nn.Linear(5, 4, bias=True),
+                torch.nn.Linear(4, 6, bias=True),
+            ),
+        ],
+    )
+    def test_round_trip(self, module):
+        module_rt = MLP.to_module(MLP.to_graph(module))
+
+        layers = list(m for m in module.modules() if m != module)
+        layers_rt = list(m for m in module_rt.modules() if m != module_rt)
+
+        assert len(layers) == len(layers_rt)
+
+        for linear, linear_rt in zip(layers, layers_rt):
+            assert torch.allclose(linear.weight, linear_rt.weight)
+            if linear.bias is not None:
+                assert torch.allclose(linear.bias, linear_rt.bias)
