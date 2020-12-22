@@ -224,11 +224,10 @@ class MLP(Convertor):
             if node_strategy is None:
                 x_l = None
             elif node_strategy == "constant":
-                x_l.append(torch.ones((n_new_nodes, 1),
-                                      dtype=torch.float))
+                x_l.append(torch.ones((n_new_nodes, 1), dtype=torch.float))
             elif node_strategy == "proportional":
                 x_ = torch.ones(n_new_nodes, dtype=torch.float)
-                x_[:linear.out_features] = 1 / (1 + linear.in_features)
+                x_[: linear.out_features] = 1 / (1 + linear.in_features)
                 x_l.append(x_[:, None])
             else:
                 raise ValueError(f"Unsupported node strategy {node_strategy}")
@@ -244,12 +243,19 @@ class MLP(Convertor):
 
             # Edge index
             edge_index_l_weights = [
-                x for x in product(range(start_inp, start_inp + linear.in_features),
-                                   range(start_out, start_out + linear.out_features))
+                x
+                for x in product(
+                    range(start_inp, start_inp + linear.in_features),
+                    range(start_out, start_out + linear.out_features),
+                )
             ]
-            edge_index_l_bias = [(start_bias + i, start_out + i) for i in range(n_bias_nodes)]
+            edge_index_l_bias = [
+                (start_bias + i, start_out + i) for i in range(n_bias_nodes)
+            ]
             edge_index_ = (
-                torch.tensor(edge_index_l_weights + edge_index_l_bias, dtype=torch.int64)
+                torch.tensor(
+                    edge_index_l_weights + edge_index_l_bias, dtype=torch.int64
+                )
                 .t()
                 .contiguous()
             )
@@ -268,9 +274,20 @@ class MLP(Convertor):
 
         return graph
 
-
     @staticmethod
     def to_module(graph):
+        """Convert `torch_geometric.data.Data` to `torch.nn.Linear`.
+
+        Parameters
+        ----------
+        graph : torch_geometric.data.Data
+            Graph that conpatible with `torch_geometric`.
+
+        Returns
+        -------
+        module : torch.nn.Linear
+            Linear module that might contain bias.
+        """
         raise NotImplementedError
 
     @staticmethod
@@ -310,7 +327,7 @@ class MLP(Convertor):
         (only 1st level hieararchy iteration).
 
         Parameters
-        ---------
+        ----------
         module : torch.nn.Module
             Any module.
 
@@ -325,7 +342,7 @@ class MLP(Convertor):
                 continue
 
             try:
-                param = next(layer.parameters())
+                next(layer.parameters())
                 yield layer
 
             except StopIteration:
