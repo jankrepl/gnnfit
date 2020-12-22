@@ -342,7 +342,7 @@ class TestMLPToGraph:
 
         # Assert the bias nodes are outcoming for exactly 1 edge
         for bias_id in bias_ids:
-            assert len([x for x in list(start_nodes) if x == bias_id])
+            assert len([x for x in list(start_nodes) if x == bias_id]) == 1
 
     @pytest.mark.parametrize("random_state", [2, 3])
     @pytest.mark.parametrize("node_strategy", [None, "constant", "proportional"])
