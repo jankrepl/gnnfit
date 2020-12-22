@@ -262,7 +262,7 @@ class MLP(Convertor):
             edge_index_l.append(edge_index_)
 
             # Preparation for the next layer
-            start_inp += linear.in_features
+            start_inp = start_out
             start_out += linear.out_features + n_bias_nodes
 
         x = torch.cat(x_l) if x_l is not None else None

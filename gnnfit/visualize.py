@@ -109,6 +109,7 @@ def plot_MLP(module):
         node_size=list(nx.get_node_attributes(network, "value").values()),
         node_color=node_color,
         edge_color=edge_color,
+        with_labels=True,
     )
 
     plt.show()
@@ -117,10 +118,10 @@ def plot_MLP(module):
 if __name__ == "__main__":
 
     module = torch.nn.Sequential(
-        torch.nn.Linear(2, 3, bias=False),
-        torch.nn.Linear(3, 10, bias=True),
+        torch.nn.Linear(1, 2, bias=True),
+        torch.nn.Linear(2, 10, bias=True),
         torch.nn.Linear(10, 20, bias=True),
-        torch.nn.Linear(20, 2, bias=False),
+        torch.nn.Linear(20, 5, bias=True),
     )
 
     # plot_network_graph(module, MLP.to_graph)

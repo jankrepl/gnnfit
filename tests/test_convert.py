@@ -278,6 +278,72 @@ class TestMLPToGraph:
         assert torch.allclose(x_linear.edge_index, x_mlp.edge_index)
         assert torch.allclose(x_linear.edge_features, x_mlp.edge_features)
 
+    @pytest.mark.parametrize(
+        "module",
+        [
+            torch.nn.Sequential(torch.nn.Linear(2, 4)),
+            torch.nn.Sequential(torch.nn.Linear(4, 7, bias=False)),
+            torch.nn.Sequential(torch.nn.Linear(4, 7), torch.nn.Linear(7, 8)),
+            torch.nn.Sequential(
+                torch.nn.Linear(4, 7, bias=False),
+                torch.nn.Linear(7, 3),
+                torch.nn.Linear(3, 2),
+            ),
+        ],
+    )
+    def test_n_edges(self, module):
+        """Number of edges is equal to the number of parameteres."""
+        n_edges_expected = sum(
+            p.numel() for p in module.parameters() if p.requires_grad
+        )
+        graph = MLP.to_graph(module)
+
+        assert len(graph.edge_features) == n_edges_expected
+        assert graph.edge_index.shape[1] == n_edges_expected
+
+    def test_biases_correct(self):
+        """Bias has not incoming edgese and has exactly one outcoming."""
+        module = torch.nn.Sequential(
+            torch.nn.Linear(2, 3, bias=True),
+            torch.nn.Linear(3, 4, bias=True),
+            torch.nn.Linear(4, 2, bias=True),
+        )
+
+        is_bias = [
+            False,
+            False,
+            False,
+            False,
+            False,
+            True,
+            True,
+            True,
+            False,
+            False,
+            False,
+            False,
+            True,
+            True,
+            True,
+            True,
+            False,
+            False,
+            True,
+            True,
+        ]
+        bias_ids = {i for i, b in enumerate(is_bias) if b}
+
+        graph = MLP.to_graph(module)
+        start_nodes = graph.edge_index[0, :].detach().numpy()
+        end_nodes = graph.edge_index[1, :].detach().numpy()
+
+        # There are no incoming edges to bias nodes
+        assert not (bias_ids & set(end_nodes))
+
+        # Assert the bias nodes are outcoming for exactly 1 edge
+        for bias_id in bias_ids:
+            assert len([x for x in list(start_nodes) if x == bias_id])
+
     @pytest.mark.parametrize("random_state", [2, 3])
     @pytest.mark.parametrize("node_strategy", [None, "constant", "proportional"])
     def test_basic_no_bias(self, node_strategy, random_state):
