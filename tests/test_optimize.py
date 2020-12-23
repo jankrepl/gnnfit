@@ -57,10 +57,12 @@ class TestGradientWRTInput:
         initial_guess_copy = deepcopy(initial_guess)
 
         model = Net()
-        final_guess = gradient_wrt_input(
+        final_guess, history = gradient_wrt_input(
             model, initial_guess, Linear.to_graph, n_iter=101
         )
         # Checks
+        assert isinstance(history, list)
+        assert len(history) == 101
         assert isinstance(final_guess, torch.nn.Linear)
 
         # No modification in place

@@ -97,4 +97,4 @@ def gradient_wrt_input(
     if verbose:
         print(f"Optimization done, final loss: {history[-1]:.4f}")
 
-    return final_guess
+    return final_guess, history
