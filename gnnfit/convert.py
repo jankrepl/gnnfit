@@ -276,7 +276,7 @@ class MLP(Convertor):
 
     @staticmethod
     def to_module(graph):
-        """Convert `torch_geometric.data.Data` to `torch.nn.Linear`.
+        """Convert `torch_geometric.data.Data` to `torch.nn.Module` MLP.
 
         Parameters
         ----------
@@ -285,10 +285,74 @@ class MLP(Convertor):
 
         Returns
         -------
-        module : torch.nn.Linear
-            Linear module that might contain bias.
+        module : torch.nn.Module
+            MLP.
         """
-        raise NotImplementedError
+        edge_features = graph.edge_features
+        n_edges = len(edge_features)
+
+        start_indices = list(graph.edge_index[0, :].detach().numpy())
+        start_indices_r = start_indices[::-1]
+        end_indices = list(graph.edge_index[1, :].detach().numpy())
+
+        layer_indices = []
+        first_node = 0
+
+        while True:
+            try:
+                first_occurance_ix = start_indices.index(first_node)
+                last_occurance_ix = n_edges - 1 - start_indices_r.index(first_node)
+
+                first_node = end_indices[first_occurance_ix]
+                last_node = end_indices[last_occurance_ix]
+
+                layer_indices.append((first_node, last_node))
+
+            except ValueError:  # raised by `index` method of list if nothing found
+                break
+
+        n_layers = len(layer_indices)
+
+        layers = []
+        current_edge = 0
+        for i in range(n_layers):
+            if i < n_layers - 1:
+                has_bias = layer_indices[i + 1][0] != (layer_indices[i][1] + 1)
+            else:
+                has_bias = layer_indices[i][1] != (graph.num_nodes - 1)
+
+            first_node, last_node = layer_indices[i]
+            if layers:
+                in_features = layers[-1].out_features
+            else:
+                # first iteration
+                in_features = first_node
+
+            out_features = last_node - first_node + 1
+
+            linear = torch.nn.Linear(in_features, out_features, bias=has_bias)
+
+            # Modify parameters - insert edge_features
+            weight = torch.nn.Parameter(
+                edge_features[current_edge : current_edge + in_features * out_features]
+                .view(in_features, out_features)
+                .t()
+            )
+            linear.weight = weight
+            current_edge += in_features * out_features
+
+            if has_bias:
+                linear.bias = torch.nn.Parameter(
+                    edge_features[current_edge : current_edge + out_features].squeeze()
+                )
+                current_edge += out_features
+
+            # Append
+            layers.append(linear)
+
+        module = torch.nn.Sequential(*layers)
+
+        return module
 
     @staticmethod
     def _is_mlp(module):

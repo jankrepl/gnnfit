@@ -265,6 +265,13 @@ class TestMLPToGraph:
         with pytest.raises(TypeError):
             MLP.to_graph("wrong_type")
 
+    def test_unknown_strategy(self):
+        with pytest.raises(ValueError):
+            MLP.to_graph(
+                torch.nn.Sequential(torch.nn.Linear(4, 5), torch.nn.Linear(6, 7)),
+                node_strategy="nonexistent",
+            )
+
     @pytest.mark.parametrize("bias", [True, False])
     @pytest.mark.parametrize("in_features", [2, 3])
     @pytest.mark.parametrize("out_features", [5, 6])
@@ -582,14 +589,14 @@ class TestMLPToGraph:
         else:
             assert graph.x is None
 
+
 class TestMLPToModule:
     @pytest.mark.parametrize(
         "module",
         [
             torch.nn.Sequential(torch.nn.Linear(2, 4)),
             torch.nn.Sequential(torch.nn.Linear(4, 7, bias=False)),
-            torch.nn.Sequential(torch.nn.Linear(4, 7),
-                                torch.nn.Linear(7, 8)),
+            torch.nn.Sequential(torch.nn.Linear(4, 7), torch.nn.Linear(7, 8)),
             torch.nn.Sequential(
                 torch.nn.Linear(4, 7, bias=False),
                 torch.nn.Linear(7, 3),
